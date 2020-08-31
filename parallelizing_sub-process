@@ -1,0 +1,161 @@
+import csv
+import pandas as pd
+import numpy as np
+import string
+from timeit import default_timer as timer
+#start time calculating
+start= timer()
+#multiprocess funaction for dataframe processing
+from multiprocess import Pool, TimeoutError, cpu_count
+
+def parallelize_dataframe(df, func, n_cores=4):
+    df_split = np.array_split(df, n_cores)
+    pool = Pool(n_cores)
+    df = pd.concat(pool.map(func, df_split))
+    pool.close()
+    pool.join()
+    return df
+    
+    
+%%time
+### OPERATION 1 ###
+
+#LOAD data
+df = pd.read_csv("D:/UOB Master BDSA/BDSA606 High Performance Computing/Project/quotes.csv")
+#df = pd.read_csv('/dbfs/FileStore/tables/quotes.csv')
+
+#DROP column category as not required for this problem
+df=df.drop(columns=['category'])
+
+#view sample data
+df.head(3)
+
+
+%%time
+### OPERATION 2 ####
+
+print("Dataset shape is:",df.shape) #view shape of dataset
+print("\nThere are missing values under columns:\n",df.isnull().sum()) #check missing values
+
+df=df.dropna() #drop rows with missing values
+print("\nMissing values dropped, now there are no missing values:\n",df.isnull().sum()) #check missing values
+print("\nDataset shape after dropping missing values:",df.shape) #reiew dataset shape
+
+#JOIN quotes for each author
+df2=df.groupby(['author'])['quote'].apply(','.join).reset_index()
+print("\nDataset shape after joining quotes for each author:",df2.shape) #reiew dataset shape
+print("\nThere are missing values after joining quotes:\n",df2.isnull().sum()) #check missing values
+df2.head(3) #view combined quotes
+
+
+%%time
+### OPERATION 3 ####
+
+#CLEAN text of quotes
+df2.replace("'",'"',inplace=True)
+df2.quote = df2.quote.str.replace(' ', '.')
+df2.quote = df2.quote.str.replace(',', '.')
+df2.quote = df2.quote.str.replace('-', '.')
+df2.quote = df2.quote.str.replace('_', '.')
+df2.quote = df2.quote.str.replace('#', '.')
+df2.quote = df2.quote.str.replace('$', '.')
+df2.quote = df2.quote.str.replace('/', '.')
+df2.quote = df2.quote.str.replace('\'', '.')
+df2.quote = df2.quote.str.replace('&', '.')
+df2.quote = df2.quote.str.replace('"', '.')
+df2.quote = df2.quote.str.replace('@', '.')
+df2.quote = df2.quote.str.replace(':', '.')
+df2.quote = df2.quote.str.replace('’', '.')
+df2.head(10) #view updates values
+
+
+%%time
+### OPERATION 4 ####
+
+#SPLIT quote into words 
+from itertools import chain
+cols = df2.columns.difference(['quote'])
+words = df2['quote'].str.split('.')
+df3 =  (df2.loc[df2.index.repeat(words.str.len()), cols]
+         .assign(words=list(chain.from_iterable(words.tolist()))))
+
+print("Dataset shape after splitting quotes into words is:",df3.shape) #reiew dataset shape
+print("\nThere are missing values under columns:\n",df3.isnull().sum()) #check missing values
+df3.head(3) #view updates values
+
+
+%%time
+### OPERATION 5 ####
+
+# DROP words & authors less than 3 char, and more than 30 for authors 
+
+df3['length'] = df3.words.str.len() #count words length
+df3['length2'] = df3.author.str.len() #count authors length
+df4 = df3[df3.length > 4] #drop words with less than 3 char..and incorrect author name values
+df4 = df4[df4.length2 > 4] #drop author with less than 3 char..and incorrect author name values
+df4 = df4[df4.length2 < 30] #drop author with more than 30 char..and incorrect author name values
+df4=df4.drop(columns=['length']) #drop - #count words length
+df4=df4.drop(columns=['length2']) # drop - #count authors length
+
+
+# COUNT word for each author
+
+df5=df4.groupby(['author', 'words']).size().reset_index(name='counts') #find count for words
+print("Dataset shape after removing words less than 3 words' charachters and dropping incorrect authros name values and adding words counts column:",df5.shape) #review
+print(df5.head(3)) #view updated dataframe
+
+print("\nNumber of authors is",df5['author'].count()) #count authors
+print("Number of unqiue authors is",df5['author'].nunique()) #count unqiue authors
+
+print("\nNumber of words is",df5['words'].count()) #count words
+print("Number of unqiue words is",df5['words'].nunique()) #count unqiue words
+
+print("\nNumber of min words count is",df5['counts'].min()) #count words - MIN
+print("Number of max words count is",df5['counts'].max()) #count words - MAX
+print("Mean words count is",df5['counts'].mean()) #count words - MEAN
+
+
+# DROP words repeated less than 3 times
+df5 = df5[df5.counts > 2]
+
+print("\nAFTER DROPPING WORDS REPEATED LESS THAN 3 TIMES ONLY - Number of min words count is",df5['counts'].min()) #count words - MIN
+print("AFTER DROPPING WORDS REPEATED LESS THAN 3 TIMES ONLY - Number of max words count is",df5['counts'].max()) #count words - MAX
+print("AFTER DROPPING WORDS REPEATED LESS THAN 3 TIMES ONLY - Mean words count is",df5['counts'].mean()) #count words - MEAN
+
+print("\nNEW - Number of authors is",df5['author'].count()) #count authors
+print("NEW - Number of unqiue authors is",df5['author'].nunique()) #count unqiue authors
+
+print("\nNEW - Number of words is",df5['words'].count()) #count words
+print("NEW - Number of unqiue words is",df5['words'].nunique()) #count unqiue words
+
+
+def func(df):
+### OPERATION 6 ####
+
+    #FIND top 5 words for each author
+    topk=5
+    df = df.groupby(['author']).apply(lambda x: x.nlargest(topk,['counts'])).reset_index(drop=True)
+    #print("Dataset shape selecting top 5 words for each author:",df6.shape) #reiew dataset shape
+    #print("\nNumber of authors is",df6['author'].count()) #count authors
+    #print("Number of unqiue authors is",df6['author'].nunique()) #count unqiue authors
+    #print("\nNumber of words is",df6['words'].count()) #count words
+    #print("Number of unqiue words is",df6['words'].nunique()) #count unqiue words
+    #print("\nNumber of min words count is",df6['counts'].min()) #counts summary - MIN
+    #print("Number of max words count is",df6['counts'].max()) #counts summary - MAX 
+    #print("Mean words count is",df6['counts'].mean()) #counts summary - MEAN
+    return df
+    
+    
+%%time
+#RUN PARALLELIZED PROCESS - OPERATION 6 ONLY
+#selecting top 5 words for each author using multiprocess function
+df = parallelize_dataframe(df5, func)
+
+### TOTAL TIME OF 6 OPERATIONS ####
+#end time calculating 
+end = timer()
+print("Time taken:", end-start)
+
+
+## Zahra Shuaib ##
+## zahrashuaib@gmail.com ##
