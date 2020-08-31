@@ -1,0 +1,184 @@
+import csv
+import pandas as pd
+import numpy as np
+import string
+from timeit import default_timer as timer
+
+#start time calculating
+start= timer()
+
+#multiprocess funaction for dataframe processing
+from multiprocess import Pool, TimeoutError, cpu_count
+
+def parallelize_dataframe(df, func, n_cores=4):
+    df_split = np.array_split(df, n_cores)
+    pool = Pool(n_cores)
+    df = pd.concat(pool.map(func, df_split))
+    pool.close()
+    pool.join()
+    return df
+    
+    
+%%time
+### OPERATION 1 ###
+
+#laod data
+df = pd.read_csv("D:/UOB Master BDSA/BDSA606 High Performance Computing/Project/quotes.csv")
+#df = pd.read_csv('/dbfs/FileStore/tables/quotes.csv')
+
+#view sample data
+df.head(3)
+def func(df):
+    
+### OPERATION 2 ####
+
+  #dropping column category as not required for this problem
+  df=df.drop(columns=['category'])
+  #view sample data
+  #df.head(3)
+
+  #reiew dataset shape
+  #print("Dataset shape is:",df.shape)
+  #check missing values
+  #print("\nThere are missing values under columns:\n",df.isnull().sum())
+
+  #DROP rows of missing values
+  df=df.dropna()
+  #check missing values
+  #print("\nMissing values dropped, now there are no missing values:\n",df.isnull().sum())
+  #reiew dataset shape
+  #print("\nDataset shape after dropping missing values:",df.shape)
+
+  #COMBINE quotes for each author
+  df=df.groupby(['author'])['quote'].apply(','.join).reset_index()
+  #reiew dataset shape
+  #print("\nDataset shape after joining quotes for each author:",df.shape)
+  #check missing values
+  #print("\nThere are missing values after joining quotes:\n",df.isnull().sum())
+  #view combined quotes
+  #df.head(3)
+
+### OPERATION 3 ####
+
+  #replace spaces and special chars with dot
+  df.replace("'",'"',inplace=True)
+  df.quote = df.quote.str.replace(' ', '.')
+  df.quote = df.quote.str.replace(',', '.')
+  df.quote = df.quote.str.replace('-', '.')
+  df.quote = df.quote.str.replace('_', '.')
+  df.quote = df.quote.str.replace('#', '.')
+  df.quote = df.quote.str.replace('$', '.')
+  df.quote = df.quote.str.replace('/', '.')
+  df.quote = df.quote.str.replace('\'', '.')
+  df.quote = df.quote.str.replace('&', '.')
+  df.quote = df.quote.str.replace('"', '.')
+  df.quote = df.quote.str.replace('@', '.')
+  df.quote = df.quote.str.replace(':', '.')
+  df.quote = df.quote.str.replace('’', '.')
+  #view updates values
+  #df.head(10)
+
+### OPERATION 4 ####
+
+  #split quote into words 
+  from itertools import chain
+  cols = df.columns.difference(['quote'])
+  words = df['quote'].str.split('.')
+  df =  (df.loc[df.index.repeat(words.str.len()), cols]
+         .assign(words=list(chain.from_iterable(words.tolist()))))
+
+  #reiew dataset shape
+  #print("Dataset shape after splitting quotes into words is:",df.shape)
+
+  #check missing values
+  #print("\nThere are missing values under columns:\n",df.isnull().sum())
+  #df.head(3)
+
+### OPERATION 5 ####
+
+  #drop words with less than 3 char..and incorrect author name values
+  df['length'] = df.words.str.len()
+  df['length2'] = df.author.str.len()
+  df2 = df[df.length > 4]
+  df2 = df2[df2.length2 > 4]
+  df2 = df2[df2.length2 < 30]
+
+  #dropping column category as not required for this problem
+  df2=df2.drop(columns=['length'])
+  df2=df2.drop(columns=['length2'])
+
+  #find count for words
+  df=df2.groupby(['author', 'words']).size().reset_index(name='counts')
+
+  #reiew dataset shape
+  #print("Dataset shape after removing words less than 3 words' charachters and dropping incorrect authros name values and adding words counts column:",df.shape)
+
+  #view updated dataframe
+  #print(df.head(3))
+
+  #count unqiue authors
+  #print("\nNumber of authors is",df['author'].count())
+  #print("Number of unqiue authors is",df['author'].nunique())
+
+  #count unqiue words
+  #print("\nNumber of words is",df['words'].count())
+  #print("Number of unqiue words is",df['words'].nunique())
+
+  #counts summary
+  #print("\nNumber of min words count is",df['counts'].min())
+  #print("Number of max words count is",df['counts'].max())
+  #print("Mean words count is",df['counts'].mean())
+
+  #drop words repeated less than 3 times
+  df = df[df.counts > 2]
+
+  #counts summary
+  #print("\nAFTER DROPPING WORDS REPEATED LESS THAN 3 TIMES ONLY - Number of min words count is",df['counts'].min())
+  #print("AFTER DROPPING WORDS REPEATED LESS THAN 3 TIMES ONLY - Number of max words count is",df['counts'].max())
+  #print("AFTER DROPPING WORDS REPEATED LESS THAN 3 TIMES ONLY - Mean words count is",df['counts'].mean())
+
+  #count unqiue authors
+  #print("\nNEW - Number of authors is",df['author'].count())
+  #print("NEW - Number of unqiue authors is",df['author'].nunique())
+
+  #count unqiue words
+  #print("\nNEW - Number of words is",df['words'].count())
+  #print("NEW - Number of unqiue words is",df['words'].nunique())
+
+### OPERATION 6 ####
+    
+  #selecting top 5 words for each author
+  topk=5
+  df=df.groupby(['author']).apply(lambda x: x.nlargest(topk,['counts'])).reset_index(drop=True)
+  return df
+
+  #reiew dataset shape
+  #print("Dataset shape selecting top 5 words for each author:",df.shape)
+
+  #count unqiue authors
+  #print("\nNumber of authors is",df['author'].count())
+  #print("Number of unqiue authors is",df['author'].nunique())
+
+  #count unqiue words
+  #print("\nNumber of words is",df['words'].count())
+  #print("Number of unqiue words is",df['words'].nunique())
+
+  #counts summary
+  #print("\nNumber of min words count is",df['counts'].min())
+  #print("Number of max words count is",df['counts'].max())
+  #print("Mean words count is",df['counts'].mean())
+    
+%%time
+#RUN FULLY PARALLELIZED PROCESS
+#selecting top 5 words for each author using multiprocess function
+df = parallelize_dataframe(df, func)
+#df.head(2)
+
+### TOTAL TIME OF 6 OPERATIONS ####
+#end time calculating 
+end = timer()
+print("Time taken:", end-start)
+
+
+## Zahra Shuaib ##
+## zahrashuaib@gmail.com ##
